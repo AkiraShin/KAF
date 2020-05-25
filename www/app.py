@@ -75,13 +75,14 @@ async def auth_factory(app, handler):
 # 数据处理工厂
 async def data_factory(app, handler):
     async def parse_data(request):
-        if request.content_type.startswith('application/json'):
-            request.__data__ = await request.json()
-            logging.info('request json: %s' % str(request.__data__))
-        elif request.content_type.startswith(
-                'application/x-www-form-urlencoded'):
-            request.__data__ = await request.post()
-            logging.info('request form: %s' % str(request.__data__))
+        if request.method == 'POST':
+            if request.content_type.startswith('application/json'):
+                request.__data__ = await request.json()
+                logging.info('request json: %s' % str(request.__data__))
+            elif request.content_type.startswith(
+                    'application/x-www-form-urlencoded'):
+                request.__data__ = await request.post()
+                logging.info('request form: %s' % str(request.__data__))
         return (await handler(request))
 
     return parse_data
@@ -111,6 +112,7 @@ async def response_factory(app, handler):
                     r, ensure_ascii=False,
                     default=lambda o: o.__dict__).encode(
                         'utf-8'))  # json.dumps()用于将字典形式的数据转化为字符串
+                resp.content_type = 'application/json;charset=utf-8'
                 return resp
             else:
                 # 在handlers.py完全完成后,去掉下一行的井号
@@ -121,12 +123,10 @@ async def response_factory(app, handler):
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
         if isinstance(r, int) and r >= 100 and r < 600:
-            print(r)
             return web.Response(r)
         if isinstance(r, tuple) and len(r) == 2:
             t, m = r
             if isinstance(t, int) and t >= 100 and t < 600:
-                print(r)
                 return web.Response(t, str(m))
         # default:
         resp = web.Response(body=str(r).encode('utf-8'))
@@ -154,14 +154,15 @@ def datetime_filter(t):
 async def init(loop):
     await orm.create_pool(loop=loop, **configs.db)
     # 在handlers.py完全完成后,在下面middlewares的list中加入auth_factory
-    app = web.Application(middlewares=[logger_factory, response_factory])
-    init_jinja2(app, filter=dict(datetime=datetime_filter))
+    app = web.Application(
+        middlewares=[logger_factory, auth_factory, response_factory])
+    init_jinja2(app, filters=dict(datetime=datetime_filter))
     add_routes(app, 'handlers')
     add_static(app)
     runner = web.AppRunner(app)
     await runner.setup()
     srv = web.TCPSite(runner, 'localhost', 9000)
-    logging.info('server started at http://127.0.0.1:9000...')
+    logging.info('server started at http://localhost:9000...')
     await srv.start()
 
 
